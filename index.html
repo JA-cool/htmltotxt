@@ -2,12 +2,13 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>HTML批量转TXT工具</title>
+    <title>HTML批量转TXT/DOC工具</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; background: #f7f7f7; }
         .container { background: #fff; padding: 30px 40px; border-radius: 8px; box-shadow: 0 2px 8px #0001; max-width: 500px; margin: auto; }
         h1 { font-size: 1.6em; margin-bottom: 20px; }
         input[type="file"] { margin-bottom: 20px; }
+        select { margin-bottom: 20px; }
         button { padding: 10px 24px; font-size: 1em; border: none; border-radius: 4px; background: #0078d7; color: #fff; cursor: pointer; }
         button:disabled { background: #aaa; }
         .tip { color: #888; font-size: 0.95em; margin-bottom: 20px; }
@@ -16,11 +17,17 @@
 </head>
 <body>
 <div class="container">
-    <h1>HTML批量转TXT工具</h1>
-    <div class="tip">请选择本地HTML文件（可多选），点击“转换并下载TXT”即可。</div>
-    <input type="file" id="fileInput" accept=".html,.htm" multiple />
+    <h1>HTML批量转TXT/DOC工具</h1>
+    <div class="tip">请选择本地 HTML/TXT 文件（可多选），点击“转换并下载ZIP”即可。</div>
+    <input type="file" id="fileInput" accept=".html,.htm,.txt" multiple />
     <br>
-    <button id="convertBtn" disabled>转换并下载TXT</button>
+    <label for="format">输出格式：</label>
+    <select id="format">
+        <option value="txt" selected>TXT</option>
+        <option value="doc">DOC</option>
+    </select>
+    <br>
+    <button id="convertBtn" disabled>转换并下载ZIP</button>
     <div class="result" id="result"></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -28,6 +35,7 @@
 const fileInput = document.getElementById('fileInput');
 const convertBtn = document.getElementById('convertBtn');
 const resultDiv = document.getElementById('result');
+const formatSelect = document.getElementById('format');
 
 fileInput.addEventListener('change', () => {
     convertBtn.disabled = fileInput.files.length === 0;
@@ -39,24 +47,44 @@ convertBtn.addEventListener('click', async () => {
     if (files.length === 0) return;
     convertBtn.disabled = true;
     resultDiv.textContent = '正在处理，请稍候...';
+    const format = formatSelect.value;
     const zip = new JSZip();
     for (const file of files) {
-        const text = await file.text();
-        // 解析HTML并提取纯文本
+        const raw = await file.text();
+        let baseName = file.name.replace(/\.(html|htm|txt)$/i, '');
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+
+        if (ext === 'txt') {
+            if (format === 'doc') {
+                // 仅改后缀为 .doc，内容保持纯文本不变
+                zip.file(baseName + '.doc', raw);
+            } else {
+                zip.file(baseName + '.txt', raw);
+            }
+            continue;
+        }
+
+        // 其余情况按 HTML 处理
         const parser = new DOMParser();
-        const doc = parser.parseFromString(text, 'text/html');
-        // 去除script和style内容
+        const doc = parser.parseFromString(raw, 'text/html');
         doc.querySelectorAll('script,style').forEach(e => e.remove());
         const pureText = doc.body ? doc.body.textContent : doc.textContent;
-        // 保证文件名唯一
-        let baseName = file.name.replace(/\.(html|htm)$/i, '');
-        zip.file(baseName + '.txt', pureText);
+
+        if (format === 'doc') {
+            const docHtml = '<!DOCTYPE html>' +
+                '<html><head><meta charset="UTF-8"><title>' + baseName + '</title></head><body>' +
+                (doc.body ? doc.body.innerHTML : (doc.documentElement ? doc.documentElement.innerHTML : '')) +
+                '</body></html>';
+            zip.file(baseName + '.doc', docHtml);
+        } else {
+            zip.file(baseName + '.txt', pureText);
+        }
     }
     // 生成ZIP并下载
     zip.generateAsync({type: 'blob'}).then(function(content) {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(content);
-        a.download = 'html批量转txt结果.zip';
+        a.download = format === 'doc' ? '批量转doc结果.zip' : '批量转txt结果.zip';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
